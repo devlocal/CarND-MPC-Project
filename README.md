@@ -1,108 +1,160 @@
 # CarND-Controls-MPC
+
+[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
+
 Self-Driving Car Engineer Nanodegree Program
+
+This project implements a Model Predictive Control algorithm to estimate the steering angle and throttle of a moving vehicle knowing vehicle desired waypoints.
 
 ---
 
-## Dependencies
-
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1(mac, linux), 3.81(Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-    Some function signatures have changed in v0.14.x. See [this PR](https://github.com/udacity/CarND-MPC-Project/pull/3) for more details.
-
-* **Ipopt and CppAD:** Please refer to [this document](https://github.com/udacity/CarND-MPC-Project/blob/master/install_Ipopt_CppAD.md) for installation instructions.
-* [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). This is already part of the repo so you shouldn't have to worry about it.
-* Simulator. You can download these from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
-* Not a dependency but read the [DATA.md](./DATA.md) for a description of the data sent back from the simulator.
-
-
-## Basic Build Instructions
+#### Basic Build Instructions
 
 1. Clone this repo.
 2. Make a build directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./mpc`.
 
-## Tips
+### Project Overview
 
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.)
-4.  Tips for setting up your environment are available [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
-5. **VM Latency:** Some students have reported differences in behavior using VM's ostensibly a result of latency.  Please let us know if issues arise as a result of a VM environment.
+The project contains the following files:
+1. [main.cpp](src/main.cpp) is the entry point of the application, it contains message handler functions to communicate with the simulator;
+2. [MPC.h](src/MPC.h) is a header file with the declaration of the `MPC` class;
+3. [MPC.cpp](src/MPC.cpp) contains implementation of the `MPC` algorithm.
 
-## Editor Settings
+### Control flow
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
+#### Get inputs from the simulator
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
+The control flow starts in the handler `h.onMessage` (file main.cpp, line 89). The function gets telemetry data (lines 105-115) from the simulator.
 
-## Code Style
+Telemetry data includes:
+1. `"ptsx"`, `"ptsy"` — the path car has to follow
+2. `"px"`, `"py"` — current vehicle position
+3. `"psi"` — current vehicle orientation
+4. `"speed"` — current vehicle speed
+5. `"steering_angle"` — current vehicle steering angle (in radians)
+6. `"throttle"` — current vehicle throttle
 
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
+#### Preprocess the data
 
-## Project Instructions and Rubric
+Telemetry data is passed in global coordinates, the first step is to convert the waypoints `ptsx` and `ptsy` from global coordinates system to car coordinates (lines 119-126).
 
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+#### Fit a polynomial, compute state and error
 
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
+The next step is to fit a polynomial to approximate the path (lines 129-131). After that vehicle state and error is computed (lines 140-165) which includes position, orientation, speed, cross-track error and orientation error.
 
-## Hints!
+#### Compute control values
 
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
+State is passed to function `MPC::Solve` (line 174) that returns control vector with values for steering angle and throttle. Steering angle is normalized to [-1, 1] range (line 184).
 
-## Call for IDE Profiles Pull Requests
+### Model
 
-Help your fellow students!
+The `MPC` class implements Model Predictive Control algorithm which takes vehicle state and polynomial as inputs and computes control values for steering angle and throttle as output.
 
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
+#### Function MPC::Solve
 
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
+The main function of the class is `Solve` (file MPC.cpp, lines 159-287).
 
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
+The function starts with decomposing vehicle state vector `state` into separate variables `x`, `y`, `psi`, `v`, `cti`, `epsi` (lines 163-168).
 
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
+The function sets `n_vars` to the number of model variables to `6 * N + 2 * (N - 1)` and number of constraints to `6 * N` where `6` is the number of elements in the state vector, `2` is the number of control values and `N` is the number of timesteps (defined as constant in line 8).
 
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
+Initial values of variables are set to `0` except initial state (lines 181-192). The lower and upper bounds are set to `[-1e19, 1e19]` for variables, `[-0.436332, 0.436332]` for steering angle `delta` (corresponds to [-25, 25] degrees) and `[-1, 1]` for throttle or acceleration `a` (lines 198-213). Lower and upper bounds for constraints are initialized with `0` except initial state (lines 217-236).
 
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+`FG_eval::operator()` is called to compute objective and constraints (line 239).
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+Finally IPOPT solver is used to find the values of control variables (lines 241-265). The status of the solver process is checked to be `success`, in case the solver fails the whole program terminates (lines 268-269).
+
+The values of control variables are returned as vector elements (lines 281-286).
+
+#### Function FG_eval::operator()
+
+FG_eval::operator() is the other part of the MPC algorithm which computes objective and constraints. It starts with initializing the cost with `0` (line 55), then iterates over `N` sets of variables and updates the cost with:
+1. Squared distance between the current speed and the target speed (line 71).
+1. Squared distance between the value of CTE at time `t` and the value of CTE at time `t-1`, computed for t > 0 (line 77).
+1. The product of speed and squared steering angle divided by `(1 + t * 0.2)`, computed for t < N-1 (line 84).
+
+Each part of the cost is described below.
+
+##### Speed not equal to reference
+
+Speed not equal to reference is penalized by adding `CppAD::pow(v - ref_v * vmult, 2) * lambda_dvref` to the cost. Here reference speed `ref_v` is multiplied by hyperparameter `vmult`. The reason for that is that the target speed is set to 100 mph in the project, however the simulator can accelerate the car slightly above that.
+
+The cost is computed as a squared distance, which means it's positive both when speed is below the target and when it's above the target. If speed is below the target the cost drives the computed speed value up, since with the increased speed this part of the cost goes down.
+
+When the speed exceeds 100 mph the speed part of the cost starts increasing, and the MPC algorithm produces a negative value of throttle, causing the vehicle to break. Setting the target speed to a larger value than 100 mph results in a steady acceleration, as opposed to acceleration and then breaking at >100 mph.
+
+This approach would of course be unacceptable in real life.
+
+##### CTE increase
+
+The next part penalizes divergence from the optimal track by adding `(CppAD::pow(cte, 2) - CppAD::pow(cte0, 2)) * lambda_dcte` to the cost. An alternative to this type of penalty would be to add a squared value of the CTE to the cost. An observation has been made during experimentation that the CTE alone is more prone to a wobbly driving then a CTE increase.
+
+##### High-speed turns
+
+High-speed turns are penalized by adding `v * CppAD::pow(delta, 2) * lambda_v_delta / (1 + t * 0.2)` to the cost. The value of `v` is positive when the vehicle moves forward. A tendency to move backwards that could be produced by optimizing towards negative values of `v` is counterbalanced by the first part of the cost "speed not equal to reference". Not raising speed to the power of 2 penalizes a speed increase less than a delta increase.
+
+The purpose of the denominator `(1 + t * 0.2)` is to penalize high-speed turn parts of the trajectory that are further away from the vehicle position slightly less than those that are close to the current vehicle position. The intention is to let the vehicle decrease the speed more aggressively while cornering, but be less aggressive with breaking or even accelerate when exiting turns.
+
+#### Hyperparameters
+
+Each part of the cost is multiplied by appropriate lambda value which are hyperparameters to tune: `lambda_dvref`, `lambda_dcte` and `lambda_v_delta`. Additional hyperparameter to tune is tartet speed multiplier `vmult`.
+
+#### CV vs CTRV Model
+
+Setting the `kCtrvModel` (file MPC.cpp, line 26) constant to `true` switches from the CV model to the CTRV when predicting position.
+
+CV model:
+
+![CV](media/cv.png)
+
+CTRV model:
+
+![CTRV](media/ctrv.png)
+
+The changes are applied to predicting the vehicle position for the duration of latency (file main.cpp, lines 144-151) and to setting model constraints (file MPC.cpp, lines 135-142).
+
+Enabling CTRV model doesn't bring the vehicle noticeably closer to the ideal path, however the car starts wobbling around the center of the track (yellow line). Limited attempts to tune the hyperparameters did not improve the behavior. The CTRV model is turned off in the final submission since the vehicle behavior is satisfactory for the project with the CV model.
+
+#### Model complexity
+
+An observation has been made while working on the project that a simple model often produces a more predicted and explainable behavior than a complex model with many components to the cost function. Earlier experiments with the model performed while working on the project included more complex models with up to 5-7 elements of the cost function. The vehicle behavior was often erratic. Also, a simpler model has less hyperparameters and is easier to tune. Therefore the final model deliberately uses only 3 cost components.
+
+### Timestep Length and Elapsed Duration
+
+Temestep is defined in variable `dt` (MPC.cpp, line 9). Number of steps is defined in constant `N` (MPC.cpp, line 8).
+
+The project has been tested with values of `dt` ranging from 0.025 to 0.2 and values of `N` ranging from 5 to 20. Final selected values are `dt=0.05` (50 milliseconds) and `N=10`.
+
+With the selected values the predicted part of the car trajectory spans 1/2 of a second. Shorter span of the predicted trajectory doesn't allow to compute accurate enough control values to keep the car on its path. Longer prediction period increases the time of computation without giving a benefit.
+
+Similarly, increasing the timestep to 100 ms results in a decreased stability of the car. Decreasing the timestep to 25 ms increases the amount of computation without providing a clear benefit to the accuracy.
+
+### Latency
+
+The control latency is simulated in the application by calling `this_thread::sleep_for` with parameter 100 ms. (file main.cpp, line 236). To account for the latency, the program predicts future vehicle state and error, and uses predicted state values as inputs for `MPC::Solve`. This way, when control values are applied, the vehicle reaches the predicted state (with a certain probability).
+
+The value of control latency used for computations is defined by the `controls_latency_sec` constant (line 13).
+
+#### Predict future vehicle state
+
+Future vehicle state is predicted by applying motion model to the current state and using the value of latency as the time distance for prediction. The program predicts vehicle position, speed and direction (lines 140-154).
+
+#### Predict future error
+
+The program computes the current state error (lines 157-158). Current error and predicted state is used to predict future error (lines 161-162).
+
+#### Latency of computation
+
+An attempt was made to account for the time it takes `MPC::Solve` to compute the values of control variables. To do that, the program measures time of `Solve` (file main.cpp, lines 173, 175-176). The time is accumulated in variable `solve_time` (defined in line 16), number of calls to `Solve` made so far is saved in variable `solve_count` (defined in line 19). Only the fist 100 calls are measured (lines 179-181).
+
+Measured time is averaged and added to the value of control latency (lines 134-137).
+
+The effect of accounting for computation latency hasn't been clearly observed.
+
+### Video Files
+
+Two video file are available:
+1. Car driving 2 laps around the track with yellow line indicating the center of the track and green line indicating predicted car trajectory: [media/2laps.mov](media/2laps.mov)
+2. Car driving 2 laps around the track without trajectory lines drawn: [media/2laps-no-trajectory.mov](media/2laps-no-trajectory.mov)

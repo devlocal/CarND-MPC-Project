@@ -1,9 +1,6 @@
 #include <math.h>
 #include <uWS/uWS.h>
-#include <chrono>
-#include <iostream>
 #include <thread>
-#include <vector>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "MPC.h"
@@ -12,10 +9,28 @@
 // for convenience
 using json = nlohmann::json;
 
+// Controls latency, seconds
+constexpr double controls_latency_sec = 0.1;
+
+// Accumulated time spent inside Solve()
+double solve_time = 0;
+
+// Number of times Solve() was called
+int solve_count = 0;
+
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
+
+// 25 degrees in radians
+const double deg2rad_25 = -deg2rad(25);
+
+// true to print debug output
+constexpr bool kPrintDebugOutput = false;
+
+// true to draw trajectory (yellow and green lines)
+constexpr bool kDrawTrajectory = true;
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -77,7 +92,9 @@ int main() {
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     string sdata = string(data).substr(0, length);
-    cout << sdata << endl;
+    if (kPrintDebugOutput) {
+      cout << sdata << endl;
+    }
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
@@ -92,14 +109,80 @@ int main() {
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
 
+          // Steering angle is expressed in radians
+          double delta = j[1]["steering_angle"];
+          delta *= -1;
+          double throttle = j[1]["throttle"];
+
+          assert(ptsx.size() == ptsy.size());
+
+          // Map ptsx and ptsy from global to vehicle coordinates
+          for (size_t i = 0; i < ptsx.size(); ++i) {
+            double offset_x = ptsx[i] - px;
+            double offset_y = ptsy[i] - py;
+
+            ptsx[i] = offset_x * cos(-psi) - offset_y * sin(-psi);
+            ptsy[i] = offset_x * sin(-psi) + offset_y * cos(-psi);
+          }
+
+          // Fit the polynomial
+          Eigen::VectorXd ptsx_evec = Eigen::VectorXd::Map(ptsx.data(), ptsx.size());
+          Eigen::VectorXd ptsy_evec = Eigen::VectorXd::Map(ptsy.data(), ptsy.size());
+          auto coeffs = polyfit(ptsx_evec, ptsy_evec, 3);
+
+          // Sum up control latency and latency induced by Solve()
+          double latency = controls_latency_sec;
+          if (solve_count > 0) {
+            latency += solve_time / solve_count;
+          }
+
+          // Predict future vehicle state in vehicle coordinates
+          double future_px;
+          double future_py;
+          double yaw_rate = (v / Lf) * delta;
+
+          if (kCtrvModel && abs(yaw_rate) > 1e-16) {
+            double v_yr = v / yaw_rate;
+            future_px = v_yr * (sin(yaw_rate * latency));
+            future_py = v_yr * (1 - cos(yaw_rate * latency));
+          } else {
+            future_px = v * latency;
+            future_py = 0;
+          }
+
+          double future_psi = yaw_rate * latency;
+          double future_v = v + throttle * latency;
+
+          // Compute current error
+          double cte = polyeval(coeffs, 0);
+          double epsi = -atan(coeffs[1]);
+
+          // Predict future error
+          double future_cte  = cte + v * sin(epsi) * latency;
+          double future_epsi = epsi + future_psi;
+
+          Eigen::VectorXd state(6);
+          state << future_px, future_py, future_psi, future_v, future_cte, future_epsi;
+
           /*
-          * TODO: Calculate steering angle and throttle using MPC.
+          * Calculate steering angle and throttle using MPC.
           *
           * Both are in between [-1, 1].
           *
           */
-          double steer_value;
-          double throttle_value;
+          clock_t begin = clock();
+          vector<double> solution = mpc.Solve(state, coeffs);
+          clock_t end = clock();
+          double elapsed_sec = static_cast<double>(end - begin) / CLOCKS_PER_SEC;
+
+          // Track time of first 100 calls to Solve()
+          if (solve_count < 100) {
+            ++solve_count;
+            solve_time += elapsed_sec;
+          }
+
+          double steer_value = solution[0] / deg2rad_25;
+          double throttle_value = solution[1];
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -107,9 +190,14 @@ int main() {
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
+          //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
+
+          if (kDrawTrajectory) {
+            mpc_x_vals = mpc.xpts();
+            mpc_y_vals = mpc.ypts();
+          }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
@@ -123,13 +211,19 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
+          if (kDrawTrajectory) {
+            next_x_vals = ptsx;
+            next_y_vals = ptsy;
+          }
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          if (kPrintDebugOutput) {
+            std::cout << msg << std::endl;
+          }
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
