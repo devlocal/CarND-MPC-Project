@@ -8,7 +8,7 @@ using CppAD::AD;
 const size_t N = 10;
 const double dt = 0.05;
 
-constexpr double ref_v = 100;
+constexpr double ref_v = 161;  // 100 Mph in Kph
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -63,9 +63,9 @@ class FG_eval {
 
       // Hyperparameters
       constexpr double vmult = 1.15;
-      constexpr double lambda_dvref = 3e-6;
-      constexpr double lambda_dcte = 1.0;
-      constexpr double lambda_v_delta = 1.1e-1;
+      constexpr double lambda_dvref = 4e-6;
+      constexpr double lambda_dcte = 3e-1;
+      constexpr double lambda_v_delta = 5e-1;
 
       // Penalize speed not equal to reference
       fg[0] += CppAD::pow(v - ref_v * vmult, 2) * lambda_dvref;
@@ -160,21 +160,21 @@ vector<double> MPC::Solve(const Eigen::VectorXd &state, const Eigen::VectorXd &c
   bool ok = true;
   typedef CPPAD_TESTVECTOR(double) Dvector;
 
-  double x = state[0];
-  double y = state[1];
-  double psi = state[2];
-  double v = state[3];
-  double cte = state[4];
-  double epsi = state[5];
+  const double x = state[0];
+  const double y = state[1];
+  const double psi = state[2];
+  const double v = state[3];
+  const double cte = state[4];
+  const double epsi = state[5];
 
   // Set the number of model variables (includes both states and inputs).
   // For example: If the state is a 4 element vector, the actuators is a 2
   // element vector and there are 10 timesteps. The number of variables is:
   //
   // 4 * 10 + 2 * 9
-  size_t n_vars = 6 * N + 2 * (N - 1);
+  const size_t n_vars = 6 * N + 2 * (N - 1);
   // Set the number of constraints
-  size_t n_constraints = 6 * N;
+  const size_t n_constraints = 6 * N;
 
   // Initial value of the independent variables.
   // SHOULD BE 0 besides initial state.
@@ -182,14 +182,6 @@ vector<double> MPC::Solve(const Eigen::VectorXd &state, const Eigen::VectorXd &c
   for (int i = 0; i < n_vars; i++) {
     vars[i] = 0;
   }
-
-  // Set the initial variable values
-  vars[x_start] = x;
-  vars[y_start] = y;
-  vars[psi_start] = psi;
-  vars[v_start] = v;
-  vars[cte_start] = cte;
-  vars[epsi_start] = epsi;
 
   Dvector vars_lowerbound(n_vars);
   Dvector vars_upperbound(n_vars);

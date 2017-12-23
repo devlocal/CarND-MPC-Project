@@ -12,11 +12,9 @@ using json = nlohmann::json;
 // Controls latency, seconds
 constexpr double controls_latency_sec = 0.1;
 
-// Accumulated time spent inside Solve()
-double solve_time = 0;
-
-// Number of times Solve() was called
-int solve_count = 0;
+// Time spent inside Solve()
+double solve_latency = 0;
+constexpr double solve_alpha = 0.5;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -25,6 +23,9 @@ double rad2deg(double x) { return x * 180 / pi(); }
 
 // 25 degrees in radians
 const double deg2rad_25 = -deg2rad(25);
+
+// Kilometers in 1 mile
+constexpr double kKmInMile = 1.61;
 
 // true to print debug output
 constexpr bool kPrintDebugOutput = false;
@@ -80,6 +81,21 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+/*
+ * Transforms waypoints from global coordinates to car coordinates.
+ * Performs an in-place transformation, does not return any value.
+ */
+void globalToCar(vector<double> &ptsx, vector<double> &ptsy, double px, double py, double psi) {
+  // Map ptsx and ptsy from global to vehicle coordinates
+  for (size_t i = 0; i < ptsx.size(); ++i) {
+    double offset_x = ptsx[i] - px;
+    double offset_y = ptsy[i] - py;
+
+    ptsx[i] = offset_x * cos(-psi) - offset_y * sin(-psi);
+    ptsy[i] = offset_x * sin(-psi) + offset_y * cos(-psi);
+  }
+}
+
 int main() {
   uWS::Hub h;
 
@@ -108,6 +124,7 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          v *= kKmInMile;
 
           // Steering angle is expressed in radians
           double delta = j[1]["steering_angle"];
@@ -117,13 +134,7 @@ int main() {
           assert(ptsx.size() == ptsy.size());
 
           // Map ptsx and ptsy from global to vehicle coordinates
-          for (size_t i = 0; i < ptsx.size(); ++i) {
-            double offset_x = ptsx[i] - px;
-            double offset_y = ptsy[i] - py;
-
-            ptsx[i] = offset_x * cos(-psi) - offset_y * sin(-psi);
-            ptsy[i] = offset_x * sin(-psi) + offset_y * cos(-psi);
-          }
+          globalToCar(ptsx, ptsy, px, py, psi);
 
           // Fit the polynomial
           Eigen::VectorXd ptsx_evec = Eigen::VectorXd::Map(ptsx.data(), ptsx.size());
@@ -131,10 +142,7 @@ int main() {
           auto coeffs = polyfit(ptsx_evec, ptsy_evec, 3);
 
           // Sum up control latency and latency induced by Solve()
-          double latency = controls_latency_sec;
-          if (solve_count > 0) {
-            latency += solve_time / solve_count;
-          }
+          double latency = controls_latency_sec + solve_latency;
 
           // Predict future vehicle state in vehicle coordinates
           double future_px;
@@ -176,10 +184,7 @@ int main() {
           double elapsed_sec = static_cast<double>(end - begin) / CLOCKS_PER_SEC;
 
           // Track time of first 100 calls to Solve()
-          if (solve_count < 100) {
-            ++solve_count;
-            solve_time += elapsed_sec;
-          }
+          solve_latency = solve_alpha * solve_latency + (1 - solve_alpha) * elapsed_sec;
 
           double steer_value = solution[0] / deg2rad_25;
           double throttle_value = solution[1];
